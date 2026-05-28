@@ -49,7 +49,13 @@ if [ ! -f "$UA_FILE" ] || [ ! -f "$KW_FILE" ]; then
 fi
 
 mapfile -t UA_POOL < <(grep -v '^$' "$UA_FILE")
-mapfile -t KEYWORDS < <(grep -v '^$' "$KW_FILE")
+mapfile -t KEYWORDS < <(grep -v '^[[:space:]]*$' "$KW_FILE")
+
+# [v4.1.5 修复] 防止关键词池为空导致 RANDOM % 0 直接语法崩溃
+if [ ${#KEYWORDS[@]} -eq 0 ]; then
+    log "$MODULE_NAME" "ERROR" "关键词池为空，终止执行。"
+    exit 1
+fi
 
 # --- [辅助运算] ---
 get_random_coord() {
@@ -97,6 +103,13 @@ elif [[ "$SESSION_UA" == *"Linux"* ]]; then
     UA_PLATFORM="linux"
 fi
 
+# [v4.1.5 防御] 坐标缺失直接终止，禁止生成错误地理画像
+if ! [[ "$BASE_LAT" =~ ^-?[0-9]+(\.[0-9]+)?$ ]] || \
+   ! [[ "$BASE_LON" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; then
+    log "$MODULE_NAME" "ERROR" "区域坐标缺失或非法，拒绝执行本轮会话。"
+    exit 1
+fi
+
 # [LBS 锚定] 在基准战区内生成固定范围内的微抖动咖啡馆坐标
 SESSION_BASE_LAT=$(get_random_coord $BASE_LAT 270)
 SESSION_BASE_LON=$(get_random_coord $BASE_LON 270)
@@ -135,7 +148,7 @@ log "$MODULE_NAME" "INFO " "Cookie 身份库已挂载: ${COOKIE_FILE}"
 # -----------------------------------------------------------
 # [网络栈探底] 协议自适应与出站死锁
 # -----------------------------------------------------------
-CURL_BIND_OPT=""
+CURL_BIND_ARGS=()
 DYNAMIC_IP_PREF="-${IP_PREF:-4}"
 
 if [[ -n "$BIND_IP" && "$BIND_IP" =~ ^[0-9a-fA-F:\.]+$ ]]; then
@@ -143,10 +156,10 @@ if [[ -n "$BIND_IP" && "$BIND_IP" =~ ^[0-9a-fA-F:\.]+$ ]]; then
     RAW_BIND_IP=$(echo "$BIND_IP" | tr -d '[]')
     # [v4.1.5 修复] 使用 -Fq 替代 -qw，防止 IPv6 冒号被误认为单词边界导致网卡死锁失效
     if ! ip addr show 2>/dev/null | grep -Fq "$RAW_BIND_IP"; then
-        log "$MODULE_NAME" "WARN " "检测到配置的出口 IP ($RAW_BIND_IP) 已丢失，自动降级为系统默认路由出网！"
-        CURL_BIND_OPT=""
+    log "$MODULE_NAME" "WARN " "检测到配置的出口 IP ($RAW_BIND_IP) 已丢失，自动降级为系统默认路由出网！"
+    CURL_BIND_ARGS=()
     else
-        CURL_BIND_OPT="--interface $BIND_IP"
+        CURL_BIND_ARGS=(--interface "$BIND_IP")
         if [[ "$BIND_IP" == *":"* ]]; then
             DYNAMIC_IP_PREF="-6"
             log "$MODULE_NAME" "INFO " "底层路由锁定: 绑定 IPv6 出口及协议 ($BIND_IP)"
@@ -170,10 +183,15 @@ for ((i=1; i<=TOTAL_ACTIONS; i++)); do
     ACTION_LAT=$(get_random_coord $SESSION_BASE_LAT 1)
     ACTION_LON=$(get_random_coord $SESSION_BASE_LON 1)
     
-    RAND_KEY=${KEYWORDS[$RANDOM % ${#KEYWORDS[@]}]}
-    # [v4.1.3 修复] 使用 printf '%s' 替换 echo，彻底抹除 URL 末尾自带的 %0A (换行符) 机器爬虫特征
-    ENCODED_KEY=$(printf '%s' "$RAND_KEY" | jq -sRr @uri 2>/dev/null)
-    [ -z "$ENCODED_KEY" ] && ENCODED_KEY="google"
+    RAND_KEY="${KEYWORDS[$((RANDOM % ${#KEYWORDS[@]}))]}"
+        # [v4.1.6 修复] jq 缺失时自动降级为纯文本编码，防止关键词池熵塌缩
+    if command -v jq >/dev/null 2>&1; then
+        ENCODED_KEY=$(printf '%s' "$RAND_KEY" | jq -sRr @uri 2>/dev/null)
+    else
+        ENCODED_KEY=$(printf '%s' "$RAND_KEY" | sed 's/ /+/g')
+    fi
+
+    [ -z "$ENCODED_KEY" ] && ENCODED_KEY=$(printf '%s' "$RAND_KEY" | tr ' ' '+')
     
     # [v4.1.4] 平台级动作轮盘：基于 UA_PLATFORM 构建专属行为矩阵
     ACTION_DICE=$((RANDOM % 100))
@@ -188,7 +206,7 @@ for ((i=1; i<=TOTAL_ACTIONS; i++)); do
             TARGET_URL="https://news.google.com/home?${LANG_PARAMS}"
             ACTION_LOG="News   "
         elif [ $ACTION_DICE -lt 85 ]; then
-            TARGET_URL="https://www.google.com/maps/search/$${ENCODED_KEY}/@${ACTION_LAT},${ACTION_LON},17z?${LANG_PARAMS}"
+            TARGET_URL="https://www.google.com/maps/search/${ENCODED_KEY}/@${ACTION_LAT},${ACTION_LON},17z?${LANG_PARAMS}"
             ACTION_LOG="Maps   "
         else
             # Android 专属底层网络探针
@@ -203,7 +221,7 @@ for ((i=1; i<=TOTAL_ACTIONS; i++)); do
             TARGET_URL="https://news.google.com/home?${LANG_PARAMS}"
             ACTION_LOG="News   "
         elif [ $ACTION_DICE -lt 90 ]; then
-            TARGET_URL="https://www.google.com/maps/search/$${ENCODED_KEY}/@${ACTION_LAT},${ACTION_LON},17z?${LANG_PARAMS}"
+            TARGET_URL="https://www.google.com/maps/search/${ENCODED_KEY}/@${ACTION_LAT},${ACTION_LON},17z?${LANG_PARAMS}"
             ACTION_LOG="Maps   "
         else
             # Apple 专属的 Captive Portal 探针，杜绝跨平台穿帮
@@ -224,7 +242,7 @@ for ((i=1; i<=TOTAL_ACTIONS; i++)); do
             TARGET_URL="${LOW_RISK_ECO[$((RANDOM % ${#LOW_RISK_ECO[@]}))]}"
             ACTION_LOG="EcoRoam"
         else
-            TARGET_URL="https://www.google.com/maps/search/$${ENCODED_KEY}/@${ACTION_LAT},${ACTION_LON},17z?${LANG_PARAMS}"
+            TARGET_URL="https://www.google.com/maps/search/${ENCODED_KEY}/@${ACTION_LAT},${ACTION_LON},17z?${LANG_PARAMS}"
             ACTION_LOG="Maps   "
         fi
     fi
@@ -240,10 +258,10 @@ for ((i=1; i<=TOTAL_ACTIONS; i++)); do
 
     # [v4.1.3 & v4.1.5 修复] 统一执行 curl，70% 概率携带同业务域 Referer
     if [ -n "$CTX_REF" ] && [ $((RANDOM % 100)) -lt 70 ]; then
-        CODE=$(curl $CURL_BIND_OPT $DYNAMIC_IP_PREF -m 15 -s -L -o /dev/null -w "%{http_code}" \
+        CODE=$(curl "${CURL_BIND_ARGS[@]}" "$DYNAMIC_IP_PREF" -m 15 -s -L -o /dev/null -w "%{http_code}" \
              -b "$COOKIE_FILE" -c "$COOKIE_FILE" -A "$SESSION_UA" -H "Referer: $CTX_REF" "$TARGET_URL")
     else
-        CODE=$(curl $CURL_BIND_OPT $DYNAMIC_IP_PREF -m 15 -s -L -o /dev/null -w "%{http_code}" \
+        CODE=$(curl "${CURL_BIND_ARGS[@]}" "$DYNAMIC_IP_PREF" -m 15 -s -L -o /dev/null -w "%{http_code}" \
              -b "$COOKIE_FILE" -c "$COOKIE_FILE" -A "$SESSION_UA" "$TARGET_URL")
     fi
     CURL_EXIT=$?
@@ -287,7 +305,7 @@ for ((i=1; i<=TOTAL_ACTIONS; i++)); do
         # 【时间收敛修复】休眠控制在 45-75 秒，防止跨周期重叠导致进程被强杀
         SLEEP_TIME=$((45 + RANDOM % 31))
         log "$MODULE_NAME" "WAIT " "阅读当前页面内容，模拟停留 $SLEEP_TIME 秒..."
-        sleep $SLEEP_TIME
+        sleep "$SLEEP_TIME"
     fi
 done
 
@@ -298,7 +316,7 @@ log "$MODULE_NAME" "INFO " "启动三核交叉验证 (URL跳转 + YT Premium + Y
 
 # 核心 1: 传统 URL 跳转探测 (请求 www 才能触发准确跳转)
 # [v4.1.2] 追加持久化 Cookie
-JUMP_HDR=$(curl $CURL_BIND_OPT $DYNAMIC_IP_PREF -m 10 -sI -b "$COOKIE_FILE" -c "$COOKIE_FILE" "http://www.google.com/")
+JUMP_HDR=$(curl "${CURL_BIND_ARGS[@]}" "$DYNAMIC_IP_PREF" -m 10 -sI -b "$COOKIE_FILE" -c "$COOKIE_FILE" "http://www.google.com/")
 JUMP_LOC=$(echo "$JUMP_HDR" | grep -i "^location:" | tr -d '\r\n')
 JUMP_GL=""
 
@@ -344,7 +362,7 @@ fi
 YT_PR_GL=""
 # [修复] 必须带上本轮循环的专属 UA (-A "$SESSION_UA")，防止被 Google CDN 丢进无状态爬虫兜底页
 # [v4.1.2] 追加持久化 Cookie
-YT_PR_HTML=$(curl $CURL_BIND_OPT $DYNAMIC_IP_PREF -m 10 -s -L -b "$COOKIE_FILE" -c "$COOKIE_FILE" -A "$SESSION_UA" "https://www.youtube.com/premium")
+YT_PR_HTML=$(curl "${CURL_BIND_ARGS[@]}" "$DYNAMIC_IP_PREF" -m 10 -s -L -b "$COOKIE_FILE" -c "$COOKIE_FILE" -A "$SESSION_UA" "https://www.youtube.com/premium")
 if [[ "$YT_PR_HTML" == *"www.google.cn"* ]]; then
     YT_PR_GL="CN"
 else
@@ -357,7 +375,7 @@ fi
 YT_MU_GL=""
 # [修复] 同样加持 UA 装甲，强行唤出完整版前端框架
 # [v4.1.2] 追加持久化 Cookie
-YT_MU_HTML=$(curl $CURL_BIND_OPT $DYNAMIC_IP_PREF -m 10 -s -L -b "$COOKIE_FILE" -c "$COOKIE_FILE" -A "$SESSION_UA" "https://music.youtube.com/")
+YT_MU_HTML=$(curl "${CURL_BIND_ARGS[@]}" "$DYNAMIC_IP_PREF" -m 10 -s -L -b "$COOKIE_FILE" -c "$COOKIE_FILE" -A "$SESSION_UA" "https://music.youtube.com/")
 if [[ "$YT_MU_HTML" == *"www.google.cn"* ]]; then
     YT_MU_GL="CN"
 else
