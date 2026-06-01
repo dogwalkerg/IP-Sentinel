@@ -970,15 +970,17 @@ if [[ -n "$TG_TOKEN" ]] && [[ -n "$CHAT_ID" ]]; then
         OLD_VERSION=$(grep "^AGENT_VERSION=" "$CONFIG_FILE" | cut -d'"' -f2)
         [ -z "$OLD_VERSION" ] && OLD_VERSION="3.3.1"
         
-        if version_lt "$OLD_VERSION" "3.3.2"; then
-            echo -e "\n📡 [路由枢纽] 正在执行跨代架构重组 (v${OLD_VERSION} -> v${TARGET_VERSION})..."
-            TEXT_MSG="✨ *IP-Sentinel 引擎热更新完成！*
+        # [v4.2.2 跨代升级防线] 只要是从低于 4.2.2 的版本升上来，强制要求用户点击注册指令同步多宿主弹匣
+        if version_lt "$OLD_VERSION" "4.2.2"; then
+            echo -e "\n📡 [路由枢纽] 正在执行容灾架构重组 (v${OLD_VERSION} -> v${TARGET_VERSION})..."
+            TEXT_MSG="✨ *IP-Sentinel 容灾引擎热更新完成！*
 📍 节点：\`${NODE_ALIAS}\`
 🌐 养护 IP：\`${SAFE_PUBLIC_IP}\`
-📡 容灾 IP：\`${SAFE_COMM_IP}\`
-🚀 状态：v${TARGET_VERSION} OTA 动态活体引擎已部署
+📡 容灾弹匣：\`${SAFE_COMM_IP}\`
+🚀 状态：v${TARGET_VERSION} 全域双栈引擎已部署
 
-⚠️ *战区架构已重组，请务必点击下方指令并发送，以同步新的防撞档案：*
+⚠️ *通讯架构已升级为多宿主容灾模式！*
+👉 **请务必点击下方指令并发送，将新版通讯弹匣同步至司令部：**
 \`${REG_MSG}\`"
             
             JSON_PAYLOAD=$(jq -n --arg cid "$CHAT_ID" --arg txt "$TEXT_MSG" --arg cb "manage:${NODE_NAME}" '{chat_id: $cid, text: $txt, parse_mode: "Markdown", reply_markup: {inline_keyboard: [[{text: "⚙️ 调出该节点控制台", callback_data: $cb}]]}}')
