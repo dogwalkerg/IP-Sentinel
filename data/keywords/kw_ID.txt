@@ -1,3 +1,8 @@
+asia
+ticketmaster
+pip.kemendikdasmen.go.id 2026
+bbca
+1
 gempa hari ini
 bmkg hari ini
 ceko vs guatemala
@@ -14,13 +19,11 @@ cek pip
 livenation
 harga emas hari ini
 bbri
-bbca
 zoom
 korea selatan vs el salvador
 panama vs republik dominika
 peabo bryson
 ihsg
-ticketmaster
 junior vs atlético nacional
 fortaleza vs vitória
 haiti vs selandia baru
@@ -31,7 +34,6 @@ nilai tukar
 spmb jatim
 penipuan daring
 dino patti djalal
-1
 ai
 kanada vs uzbekistan
 norwegia vs swedia
@@ -96,5 +98,3 @@ surabaya
 simak
 baterai listrik
 telkom
-flotilla
-korupsi

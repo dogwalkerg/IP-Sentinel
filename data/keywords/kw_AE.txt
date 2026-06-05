@@ -1,9 +1,15 @@
+വിമാനം
+teams
+environment day
 mexico vs serbia
-world cup
-fifa world cup
+indigo
+spain fc
 العراق واسبانيا
 فرنسا ضد ساحل العاج
 france
+spain
+world cup
+fifa world cup
 ruler of dubai
 أبو ظبي
 france vs ivory coast
@@ -34,7 +40,6 @@ ai
 വിമാനത്താവളം
 الف
 ന്യൂസ്
-teams
 uae insect product recall
 سهام جلال
 dewa
@@ -93,8 +98,3 @@ sensex
 bbc news
 sharjah parking free
 sky news
-weather
-iran news
-cnn
-hajj 2026
-pakistan
